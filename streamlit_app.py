@@ -3,7 +3,7 @@ import streamlit as st
 import datetime as dt
 
 with st.sidebar:
-    st.title("Enter the basic things you want to see")
+    st.header("Enter the basic things you want to see")
     Company = st.text_input("Enter the company ticker")
     starter = st.text_input("enter start date in format YYYY-MM-DD")
     ender = st.text_input("enter end date in format YYYY-MM-DD")
