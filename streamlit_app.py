@@ -1,7 +1,6 @@
 import yfinance as yf
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
 
 # Page configuration
 st.set_page_config(page_title="Nifty Technical Analysis", layout="wide")
@@ -112,41 +111,29 @@ print(data.head())
 # Layout Title
 st.title(f"Technical Analysis for {ticker}")
 
-# Plotting helper
-def plot_series(index, series, ylabel=None, markers=None):
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(index, series)
-    if markers:
-        for level in markers:
-            ax.axhline(level, linestyle='--', alpha=0.5)
-    if ylabel:
-        ax.set_ylabel(ylabel)
-    st.pyplot(fig)
+# --- Streamlit Native Charts ---
 
 # Closing Price chart
 st.subheader("Closing Price")
-plot_series(data.index, data['Close'], ylabel='Price')
+st.line_chart(data['Close'])
 
 # RSI chart
 st.subheader("Relative Strength Index (RSI)")
-plot_series(data.index, data['RSI'], ylabel='RSI', markers=[70, 30])
+st.line_chart(data['RSI'])
+st.markdown("Overbought: 70, Oversold: 30")
 
 # MACD chart
 st.subheader("MACD")
-fig, ax = plt.subplots(figsize=(10, 4))
-ax.plot(data.index, data['MACD'], label='MACD')
-ax.plot(data.index, data['MACD_Signal'], label='Signal')
-ax.legend()
-st.pyplot(fig)
+st.line_chart(data[['MACD', 'MACD_Signal']])
 
 # ROC and ADX side-by-side
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("Rate of Change (ROC)")
-    plot_series(data.index, data['ROC'], ylabel='ROC (%)')
+    st.line_chart(data['ROC'])
 with col2:
     st.subheader("Average Directional Index (ADX)")
-    plot_series(data.index, data['ADX'], ylabel='ADX')
+    st.line_chart(data['ADX'])
 
 # Raw data toggle
 if st.checkbox("Show raw data"):
