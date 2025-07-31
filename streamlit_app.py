@@ -8,7 +8,9 @@ st.set_page_config(page_title="Nifty Technical Analysis", layout="wide")
 
 @st.cache_data
 def load_data(ticker: str, start_date: Union[str, pd.Timestamp], end_date: Union[str, pd.Timestamp]) -> pd.DataFrame:
-    df: pd.DataFrame = yf.download(ticker, start=start_date, end=end_date)
+    df = yf.download(ticker, start=start_date, end=end_date)
+    if df is None:
+        df = pd.DataFrame()
     df.dropna(inplace=True)
     return df
 
@@ -70,6 +72,39 @@ def sortinoRatio(r_p: float, r_f: float, sigma_d: float) -> float:
 
 def treynorRatio(r_p: float, r_f: float, beta_p: float) -> float:
     return ratio(r_p, r_f, beta_p)
+
+def calmer(annualized_Return: float, Max_drawdown:float) -> float:
+    return annualized_Return / Max_drawdown
+
+def MDD(P_peak:float, trough: list[float]) -> float:
+    return max(1 - i / P_peak for i in trough)
+
+def winratio(NwinTrade: int, NTotaltrade: int) -> float:
+    return NwinTrade/ NTotaltrade
+
+def averageWinRatio(MeanWinningtrade: float, MeanLoosingtrade: float) -> float:
+    return MeanWinningtrade/MeanLoosingtrade
+
+def drawdown_duration(values: list[float]):
+    drawdown = []
+    start = None    # start of a drawdown
+   
+    for i in range (1, len(values)):
+        #checking if current value is a peak
+        if values[i] > values[i-1]:
+            # signifying a end of a drawdown
+            if start is not None:
+                drawdown.append(1 - start)
+                start = None
+        # if current is a trough
+        elif values[i] < values[i-1]:
+            # if entering one
+            #let's mark the start [:(]
+            if start is None : 
+                start = i 
+    # out of values still in drawdown
+    if start is not None:
+        drawdown.append(len(values) - start)
 
 # Sidebar inputs
 ticker: str = st.sidebar.text_input("Ticker", value="AAPL")
