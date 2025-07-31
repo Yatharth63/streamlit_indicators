@@ -9,56 +9,66 @@ st.set_page_config(page_title="Nifty Technical Analysis", layout="wide")
 @st.cache_data
 def load_data(ticker: str, start_date: Union[str, pd.Timestamp], end_date: Union[str, pd.Timestamp]) -> pd.DataFrame:
     df = yf.download(ticker, start=start_date, end=end_date)
-    if df is None:
-        df = pd.DataFrame()
+    if df is None or df.empty:
+        return pd.DataFrame()
     df.dropna(inplace=True)
     return df
 
 # Indicator functions
 def compute_rsi(series: pd.Series, window: int = 14) -> pd.Series:
-    delta: pd.Series = series.diff()
-    gain: pd.Series = delta.clip(lower=0)
-    loss: pd.Series = -delta.clip(upper=0)
-    avg_gain: pd.Series = gain.rolling(window).mean()
-    avg_loss: pd.Series = loss.rolling(window).mean()
-    rs: pd.Series = avg_gain / avg_loss
-    rsi: pd.Series = 100 - (100 / (1 + rs))
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(window=window, min_periods=window).mean()
+    avg_loss = loss.rolling(window=window, min_periods=window).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
     return rsi
 
 def compute_macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series]:
-    ema_fast: pd.Series = series.ewm(span=fast, adjust=False).mean()
-    ema_slow: pd.Series = series.ewm(span=slow, adjust=False).mean()
-    macd_line: pd.Series = ema_fast - ema_slow
-    signal_line: pd.Series = macd_line.ewm(span=signal, adjust=False).mean()
+    ema_fast = series.ewm(span=fast, adjust=False).mean()
+    ema_slow = series.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
     return macd_line, signal_line
 
 def compute_roc(series: pd.Series, window: int = 12) -> pd.Series:
     return (series - series.shift(window)) / series.shift(window) * 100
 
 def compute_adx(df: pd.DataFrame, window: int = 14) -> pd.Series:
-    high: pd.Series = df['High']
-    low: pd.Series = df['Low']
-    close: pd.Series = df['Close']
-    tr_components: pd.DataFrame = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1)
-    tr: pd.Series = tr_components.max(axis=1)
-    atr: pd.Series = tr.rolling(window).mean()
+    # Ensure columns are numeric and 1D Series
+    high = pd.to_numeric(df['High'].squeeze(), errors='coerce')
+    low = pd.to_numeric(df['Low'].squeeze(), errors='coerce')
+    close = pd.to_numeric(df['Close'].squeeze(), errors='coerce')
 
-    up_move: pd.Series = high.diff()
-    down_move: pd.Series = low.diff()
-    plus_dm: pd.Series = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
-    minus_dm: pd.Series = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+    # True Range and ATR
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(window=window, min_periods=window).mean()
 
-    plus_di: pd.Series = 100 * plus_dm.rolling(window).sum() / atr
-    minus_di: pd.Series = 100 * minus_dm.rolling(window).sum() / atr
+    # Directional Movements
+    up_move = high.diff()
+    down_move = low.diff()
 
-    dx: pd.Series = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
-    adx: pd.Series = dx.rolling(window).mean()
-    adx.name = 'ADX'
+    # Ensure up_move and down_move are numeric
+    up_move = pd.to_numeric(up_move, errors='coerce')
+    down_move = pd.to_numeric(down_move, errors='coerce')
+
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+    plus_di = 100 * plus_dm.rolling(window=window, min_periods=window).sum() / atr
+    minus_di = 100 * minus_dm.rolling(window=window, min_periods=window).sum() / atr
+
+    # Directional Index and ADX calculation
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    adx = dx.rolling(window=window, min_periods=window).mean()
+
+    # Ensure it returns only the ADX Series
     return adx
+
 
 def ratio(x: float, y: float, z: float) -> float:
     ratio: float = (x - y) / z
@@ -73,47 +83,39 @@ def sortinoRatio(r_p: float, r_f: float, sigma_d: float) -> float:
 def treynorRatio(r_p: float, r_f: float, beta_p: float) -> float:
     return ratio(r_p, r_f, beta_p)
 
-def calmer(annualized_Return: float, Max_drawdown:float) -> float:
+def calmer(annualized_Return: float, Max_drawdown: float) -> float:
     return annualized_Return / Max_drawdown
 
-def MDD(P_peak:float, trough: list[float]) -> float:
+def MDD(P_peak: float, trough: list[float]) -> float:
     return max(1 - i / P_peak for i in trough)
 
 def winratio(NwinTrade: int, NTotaltrade: int) -> float:
-    return NwinTrade/ NTotaltrade
+    return NwinTrade / NTotaltrade
 
 def averageWinRatio(MeanWinningtrade: float, MeanLoosingtrade: float) -> float:
-    return MeanWinningtrade/MeanLoosingtrade
+    return MeanWinningtrade / MeanLoosingtrade
 
-def drawdown_duration(values: list[float]):
+def drawdown_duration(values: list[float]) -> list[float]:
     drawdown = []
-    start = None    # start of a drawdown
-   
-    for i in range (1, len(values)):
-        #checking if current value is a peak
-        if values[i] > values[i-1]:
-            # signifying a end of a drawdown
-            if start is not None:
-                drawdown.append(1 - start)
+    start = None  # start of a drawdown
+    for i in range(1, len(values)):
+        if values[i] > values[i - 1]:  # Peak
+            if start is not None:  # End of drawdown
+                drawdown.append(i - start)
                 start = None
-        # if current is a trough
-        elif values[i] < values[i-1]:
-            # if entering one
-            #let's mark the start [:(]
-            if start is None : 
+        elif values[i] < values[i - 1]:  # Trough
+            if start is None:  # Start of drawdown
                 start = i 
-    # out of values still in drawdown
-    if start is not None:
+    if start is not None:  # If still in a drawdown at the end
         drawdown.append(len(values) - start)
+    return drawdown
 
 # Sidebar inputs
 ticker: str = st.sidebar.text_input("Ticker", value="AAPL")
-start_date: pd.Timestamp = st.sidebar.date_input("Start Date", value=pd.to_datetime("2020-01-01"))
-end_date: pd.Timestamp = st.sidebar.date_input("End Date", value=pd.to_datetime("2025-01-01"))
-print(f"Ticker: {ticker}, Start: {start_date}, End: {end_date}")
+start_date = pd.to_datetime(st.sidebar.date_input("Start Date", value=pd.to_datetime("2020-01-01")))
+end_date = pd.to_datetime(st.sidebar.date_input("End Date", value=pd.to_datetime("2025-01-01")))
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("**Indicator Parameters**")
+# Indicator Parameters
 rsi_window: int = st.sidebar.number_input("RSI Window", min_value=2, max_value=50, value=14)
 macd_fast: int = st.sidebar.number_input("MACD Fast EMA", min_value=2, max_value=50, value=12)
 macd_slow: int = st.sidebar.number_input("MACD Slow EMA", min_value=2, max_value=100, value=26)
@@ -140,55 +142,67 @@ with st.spinner("Calculating indicators..."):
     data['MACD'] = macd_line
     data['MACD_Signal'] = signal_line
     data['ROC'] = compute_roc(data['Close'], window=roc_window)
-    adx_series: pd.Series = compute_adx(data[['High', 'Low', 'Close']], window=adx_window)
-    print("adx_series type:", type(adx_series))
-    print("adx_series shape:", getattr(adx_series, 'shape', None))
-    print("adx_series ndim:", getattr(adx_series, 'ndim', None))
-    print("data index shape:", data.index.shape)
-    print("adx_series head:", adx_series.head())
-    if isinstance(adx_series, pd.DataFrame):
-        adx_series = adx_series.iloc[:, 0]
-    elif hasattr(adx_series, 'ndim') and adx_series.ndim > 1:
-        adx_series = pd.Series(adx_series.squeeze(), index=data.index)
-    data['ADX'] = adx_series.reindex(data.index)
-print("Data after indicators, before dropna:", data.shape)
-print(data.head())
+    data['ADX'] = compute_adx(data[['High', 'Low', 'Close']], window=adx_window)
 
-# Drop NaNs from warm-up periods
-data.dropna(inplace=True)
-print("Data after dropna:", data.shape)
-print(data.head())
+# Calculate performance metrics
+annualized_return = data['Close'].pct_change().mean() * 252  # Simple annualized return estimate
+sigma_p = data['Close'].pct_change().std() * (252 ** 0.5)  # Annualized volatility
+risk_free_rate = 0.03  # Assuming a risk-free rate of 3% (can be adjusted)
+beta_p = 1.0  # Assuming a beta of 1.0 for Treynor ratio (you can estimate this with a market model)
 
-# Layout Title
-st.title(f"Technical Analysis for {ticker}")
+# Calculate Sharpe, Sortino, and Treynor Ratios
+sharpe = SharpeRatio(annualized_return, risk_free_rate, sigma_p)
+sortino = sortinoRatio(annualized_return, risk_free_rate, sigma_p)  # Replace sigma_p with downside volatility if needed
+treynor = treynorRatio(annualized_return, risk_free_rate, beta_p)
 
-# --- Streamlit Native Charts ---
+# Calculate Max Drawdown and Calmer Ratio
+peak = data['Close'].max()
+trough = data['Close'].min()
+mdd = MDD(peak, data['Close'].tolist())  # Max drawdown percentage
+calmer_ratio = calmer(annualized_return, mdd)  # Calmer Ratio
 
-# Closing Price chart
-st.subheader("Closing Price")
-st.line_chart(data['Close'])
+# User checkboxes for visibility
+show_rsi = st.checkbox("Show RSI", value=True)
+show_macd = st.checkbox("Show MACD", value=True)
+show_roc = st.checkbox("Show ROC", value=True)
+show_adx = st.checkbox("Show ADX", value=True)
+show_drawdown = st.checkbox("Show Drawdown Duration", value=True)
+show_raw_data = st.checkbox("Show Raw Data", value=False)
+show_performance_metrics = st.checkbox("Show Performance Metrics", value=True)
 
-# RSI chart
-st.subheader("Relative Strength Index (RSI)")
-st.line_chart(data['RSI'])
-st.markdown("Overbought: 70, Oversold: 30")
+# Plotting
+if show_rsi:
+    st.subheader("Relative Strength Index (RSI)")
+    st.line_chart(data['RSI'])
+    st.markdown("Overbought: 70, Oversold: 30")
 
-# MACD chart
-st.subheader("MACD")
-st.line_chart(data[['MACD', 'MACD_Signal']])
+if show_macd:
+    st.subheader("MACD")
+    st.line_chart(data[['MACD', 'MACD_Signal']])
 
-# ROC and ADX side-by-side
-col1, col2 = st.columns(2)
-with col1:
+if show_roc:
     st.subheader("Rate of Change (ROC)")
     st.line_chart(data['ROC'])
-with col2:
+
+if show_adx:
     st.subheader("Average Directional Index (ADX)")
     st.line_chart(data['ADX'])
 
-# Raw data toggle
-if st.checkbox("Show raw data"):
-    if data.empty:
-        st.write("No data to display.")
-    else:
-        st.write(data)
+if show_drawdown:
+    drawdown_durations = drawdown_duration(data['Close'].tolist())
+    st.subheader("Drawdown Duration")
+    st.bar_chart(drawdown_durations)
+
+# Show performance metrics
+if show_performance_metrics:
+    st.subheader("Performance Metrics")
+    st.write(f"**Sharpe Ratio**: {sharpe:.2f}")
+    st.write(f"**Sortino Ratio**: {sortino:.2f}")
+    st.write(f"**Treynor Ratio**: {treynor:.2f}")
+    st.write(f"**Max Drawdown**: {mdd:.2%}")
+    st.write(f"**Calmer Ratio**: {calmer_ratio:.2f}")
+
+# Show raw data toggle
+if show_raw_data:
+    st.subheader("Raw Data")
+    st.write(data)
